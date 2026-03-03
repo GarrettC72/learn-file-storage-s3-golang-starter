@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -47,9 +48,18 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	data, err := io.ReadAll(file)
+	newFilePath := getAssetPath(videoID, mediaType)
+	newFileDiskPath := cfg.getAssetDiskPath(newFilePath)
+
+	newFile, err := os.Create(newFileDiskPath)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error reading file", err)
+		respondWithError(w, http.StatusInternalServerError, "Unable to create file on server", err)
+		return
+	}
+	defer newFile.Close()
+	_, err = io.Copy(newFile, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error saving file", err)
 		return
 	}
 
@@ -64,17 +74,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	videoThumbnails[videoID] = thumbnail{
-		data:      data,
-		mediaType: mediaType,
-	}
-
-	newThumbnailURL := fmt.Sprintf("http://localhost:%s/api/thumbnails/%s", cfg.port, videoID)
-	video.ThumbnailURL = &newThumbnailURL
+	newUrl := cfg.getAssetURL(newFilePath)
+	video.ThumbnailURL = &newUrl
 
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
-		delete(videoThumbnails, videoID)
 		respondWithError(w, http.StatusInternalServerError, "Couldn't update video", err)
 		return
 	}
